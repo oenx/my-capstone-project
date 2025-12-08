@@ -141,6 +141,71 @@ def optimize_allocation_ilp(df_scope, resource_type, total_resources):
     return df_result
 
 # ---------------------------------------------------------------------
+# 지역 취약지수 변화 계산 함수
+# ---------------------------------------------------------------------
+def calculate_regional_vulnerability_change(df_result, scope, selected_sido=None):
+    """
+    시나리오 적용 전후의 지역별(또는 전국/시도) 취약지수 변화를 계산
+    
+    Args:
+        df_result: 최적화 결과 데이터프레임
+        scope: '전국' 또는 '특정 시도'
+        selected_sido: 선택된 시도명 (scope가 '특정 시도'일 때)
+    
+    Returns:
+        tuple: (before_value, after_value, improvement_value, improvement_rate)
+    """
+    if scope == "특정 시도" and selected_sido:
+        df_analysis = df_result[df_result['시도명'] == selected_sido].copy()
+        region_name = selected_sido
+    else:
+        df_analysis = df_result.copy()
+        region_name = "전국"
+    
+    # 총합 기반 계산
+    total_before = float(df_analysis['취약지수'].sum())
+    total_after = float(df_analysis['배분_후_취약지수'].sum())
+    improvement = total_before - total_after
+    improvement_rate = (improvement / total_before * 100) if total_before > 0 else 0.0
+    
+    return {
+        'region_name': region_name,
+        'before': total_before,
+        'after': total_after,
+        'improvement': improvement,
+        'improvement_rate': improvement_rate,
+        'num_regions': len(df_analysis),
+        'avg_before': float(df_analysis['취약지수'].mean()),
+        'avg_after': float(df_analysis['배분_후_취약지수'].mean())
+    }
+
+# ---------------------------------------------------------------------
+# 시도별 취약지수 변화 계산 함수
+# ---------------------------------------------------------------------
+def calculate_sido_vulnerability_changes(df_result):
+    """
+    시도별로 취약지수 변화를 계산
+    """
+    if '시도명' not in df_result.columns:
+        return pd.DataFrame()
+    
+    sido_changes = []
+    for sido in df_result['시도명'].unique():
+        df_sido = df_result[df_result['시도명'] == sido]
+        before = float(df_sido['취약지수'].sum())
+        after = float(df_sido['배분_후_취약지수'].sum())
+        improvement = before - after
+        sido_changes.append({
+            '시도': sido,
+            '배분전': before,
+            '배분후': after,
+            '개선효과': improvement,
+            '개선율': (improvement / before * 100) if before > 0 else 0.0
+        })
+    
+    return pd.DataFrame(sido_changes).sort_values('개선효과', ascending=False)
+
+# ---------------------------------------------------------------------
 # session_state 초기화 유틸
 # ---------------------------------------------------------------------
 if "ilp_result" not in st.session_state:
@@ -379,15 +444,82 @@ elif page == "🎯 시나리오 시뮬레이션":
             else:
                 st.info("배분된 지역이 없습니다.")
 
-        # 개선 효과 차트
+        # 개선 효과 차트 - 양분 레이아웃 (왼쪽: 지역 취약지수 변화, 오른쪽: 개선효과)
         if not df_allocated.empty and '배분_후_취약지수' in df_result.columns:
-            st.markdown("#### 📊 취약지수 개선 효과 (Top 10)")
-            top10 = df_allocated.nlargest(10, '배분량')
-            fig = go.Figure()
-            fig.add_trace(go.Bar(y=top10['시군구명'], x=top10['취약지수'], name='배분 전', orientation='h'))
-            fig.add_trace(go.Bar(y=top10['시군구명'], x=top10['배분_후_취약지수'], name='배분 후', orientation='h'))
-            fig.update_layout(barmode='group', yaxis={'categoryorder':'total ascending'}, height=420, xaxis_title='취약지수')
-            st.plotly_chart(fig, use_container_width=True)
+            col_chart1, col_chart2 = st.columns([1, 1])
+            
+            with col_chart1:
+                st.markdown("#### 📊 지역 전체 취약지수 변화")
+                
+                # 지역 취약지수 변화 계산
+                regional_info = calculate_regional_vulnerability_change(
+                    df_result, 
+                    params.get('scope', '전국'),
+                    params.get('selected_sido')
+                )
+                
+                # 변화 데이터 준비
+                change_data = pd.DataFrame({
+                    '상태': ['배분 전', '배분 후'],
+                    '총합': [regional_info['before'], regional_info['after']]
+                })
+                
+                # 총합 변화 그래프
+                fig_regional = px.bar(
+                    change_data, 
+                    x='상태', 
+                    y='총합',
+                    color='상태',
+                    color_discrete_map={'배분 전': '#EF553B', '배분 후': '#636EFA'},
+                    labels={'총합': '전체 취약지수'}
+                )
+                fig_regional.update_layout(
+                    height=350,
+                    showlegend=False,
+                    yaxis_title='취약지수 (합계)',
+                    xaxis_title='',
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig_regional, use_container_width=True)
+                
+                # 통계 정보
+                st.markdown(f"**📍 선택 범위:** {regional_info['region_name']}")
+                st.markdown(f"**📍 분석 지역 수:** {regional_info['num_regions']}개")
+                st.divider()
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("배분 전 총합", f"{regional_info['before']:.2f}")
+                with col_b:
+                    st.metric("배분 후 총합", f"{regional_info['after']:.2f}")
+                with col_c:
+                    st.metric("개선 효과", f"{regional_info['improvement']:.4f}", 
+                             delta=f"{regional_info['improvement_rate']:.1f}%")
+                
+                # 시도별 변화 표시
+                if params.get('scope') == '전국':
+                    st.markdown("**🗺️ 시도별 개선 현황**")
+                    sido_changes = calculate_sido_vulnerability_changes(df_result)
+                    if not sido_changes.empty:
+                        fig_sido = px.bar(
+                            sido_changes,
+                            x='시도',
+                            y='개선효과',
+                            color='개선율',
+                            color_continuous_scale='Greens',
+                            hover_data=['배분전', '배분후', '개선율'],
+                            labels={'개선효과': '취약지수 개선량'}
+                        )
+                        fig_sido.update_layout(height=300, xaxis_tickangle=-45)
+                        st.plotly_chart(fig_sido, use_container_width=True)
+            
+            with col_chart2:
+                st.markdown("#### 📊 취약지수 개선 효과 (Top 10)")
+                top10 = df_allocated.nlargest(10, '배분량')
+                fig = go.Figure()
+                fig.add_trace(go.Bar(y=top10['시군구명'], x=top10['취약지수'], name='배분 전', orientation='h'))
+                fig.add_trace(go.Bar(y=top10['시군구명'], x=top10['배분_후_취약지수'], name='배분 후', orientation='h'))
+                fig.update_layout(barmode='group', yaxis={'categoryorder':'total ascending'}, height=400, xaxis_title='취약지수')
+                st.plotly_chart(fig, use_container_width=True)
 
         # 전체 결과 및 다운로드
         with st.expander("📋 전체 지역 배분 결과 보기"):
