@@ -31,12 +31,14 @@ def load_data():
     df = pd.read_csv('data/data.csv')
     df['행정구역코드'] = df['행정구역코드'].astype(str).str.zfill(5)
     
-    # GeoJSON 로드 (좌표계 변환 불필요, 이미 4326이라 가정)
+    # GeoJSON 로드
     gdf = gpd.read_file('data/sigungu.json')
     
-    # 지도 데이터와 병합을 위해 컬럼명 통일 (SIG_CD -> 행정구역코드)
+    # 행정구역코드 통일
     if 'SIG_CD' in gdf.columns:
         gdf = gdf.rename(columns={'SIG_CD': '행정구역코드'})
+    
+    gdf['행정구역코드'] = gdf['행정구역코드'].astype(str).str.zfill(5)
         
     return df, gdf
 
@@ -61,10 +63,8 @@ sido_list = sorted(df['시도명'].unique())
 selected_sido = st.sidebar.multiselect("확인할 지역(시도)을 선택하세요", options=sido_list, default=sido_list)
 
 # 데이터 필터링
-# 1. 연도로 필터링
 df_year = df[df['연도'] == selected_year]
 
-# 2. 지역으로 필터링 (선택 안 하면 전체)
 if selected_sido:
     df_filtered = df_year[df_year['시도명'].isin(selected_sido)]
     gdf_filtered = gdf[gdf['행정구역코드'].isin(df_filtered['행정구역코드'])]
@@ -99,7 +99,7 @@ st.markdown("---")
 # -----------------------------------------------------------------------------
 # 5. 지도 시각화 & 차트 (2단 레이아웃)
 # -----------------------------------------------------------------------------
-row1_col1, row1_col2 = st.columns([3, 2]) # 지도를 좀 더 크게
+row1_col1, row1_col2 = st.columns([3, 2])
 
 with row1_col1:
     st.subheader(f"🗺️ {selected_year}년 응급의료 취약지수 지도")
@@ -118,17 +118,17 @@ with row1_col1:
             data=merged_gdf,
             columns=['행정구역코드', '취약지수'],
             key_on='feature.properties.행정구역코드',
-            fill_color='YlOrRd', # 노랑 -> 빨강 (빨갈수록 취약)
+            fill_color='YlOrRd',
             fill_opacity=0.7,
             line_opacity=0.2,
             legend_name='취약지수 (높을수록 취약)'
         ).add_to(m)
 
-        # 툴팁 추가 (마우스 올리면 정보 뜨게)
+        # 툴팁 추가
         folium.GeoJson(
             merged_gdf,
             name='지역 정보',
-            style_function=lambda x: {'fillColor': '#00000000', 'color': '#00000000'}, # 투명하게 덮기
+            style_function=lambda x: {'fillColor': '#00000000', 'color': '#00000000'},
             tooltip=folium.GeoJsonTooltip(
                 fields=['시도명', '시군구명', '취약지수', '추가_의사수', '추가_구급차수'],
                 aliases=['시도', '시군구', '취약지수', '필요 의사', '필요 구급차'],
@@ -143,7 +143,6 @@ with row1_col1:
 with row1_col2:
     st.subheader("📊 자원 부족 상위 지역 (Top 10)")
     
-    # 탭을 나눠서 보여주기
     tab1, tab2 = st.tabs(["필요 의사 수", "취약지수 순위"])
     
     with tab1:
@@ -181,9 +180,19 @@ with row1_col2:
 # -----------------------------------------------------------------------------
 st.markdown("### 📋 상세 데이터 보기")
 with st.expander("클릭하여 전체 데이터 확인하기"):
-    st.dataframe(
-        df_filtered[['시도명', '시군구명', '총인구', '고령인구_65세이상', '취약지수', '추가_의사수', '추가_구급차수', '추가_응급시설수']]
-        .sort_values(by='취약지수', ascending=False)
-        .style.background_gradient(cmap='OrRd', subset=['취약지수'])
-        .format({'취약지수': '{:.3f}', '총인구': '{:,.0f}'})
-    )
+    # 스타일링을 try-except로 감싸기
+    try:
+        styled_df = (
+            df_filtered[['시도명', '시군구명', '총인구', '고령인구_65세이상', '취약지수', '추가_의사수', '추가_구급차수', '추가_응급시설수']]
+            .sort_values(by='취약지수', ascending=False)
+            .style.background_gradient(cmap='OrRd', subset=['취약지수'])
+            .format({'취약지수': '{:.3f}', '총인구': '{:,.0f}'})
+        )
+        st.dataframe(styled_df)
+    except ImportError:
+        # matplotlib가 없을 경우 스타일링 없이 표시
+        st.dataframe(
+            df_filtered[['시도명', '시군구명', '총인구', '고령인구_65세이상', '취약지수', '추가_의사수', '추가_구급차수', '추가_응급시설수']]
+            .sort_values(by='취약지수', ascending=False)
+        )
+        st.info("💡 표 스타일링을 위해 matplotlib 설치가 필요합니다.")
