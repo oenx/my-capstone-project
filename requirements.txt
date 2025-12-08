@@ -2,3 +2,6 @@ streamlit
 pandas
 geopandas
 numpy
+folium
+streamlit-folium
+plotly
