@@ -7,7 +7,7 @@ from streamlit_folium import st_folium
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-import pulp
+import pulp 
 
 # ---------------------------------------------------------------------
 # 페이지 기본 설정
@@ -18,6 +18,42 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# [DESIGN] 커스텀 CSS 추가: 메트릭 박스, 헤더 스타일링
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f8f9fa;
+    }
+    div[data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.9rem !important;
+        color: #666;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+        color: #333;
+        font-weight: 700;
+    }
+    h1, h2, h3 {
+        color: #2c3e50;
+        font-family: 'Pretendard', sans-serif;
+    }
+    .insight-box {
+        background-color: #e8f4f8;
+        border-left: 5px solid #3498db;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
 # 데이터 로드
@@ -43,7 +79,7 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------------------
-# 개선효과 계산 함수 (w_i)
+# 개선효과 계산 함수 (w_i) - 기존 로직 유지
 # ---------------------------------------------------------------------
 def calculate_improvement_per_unit(row, resource_type):
     col_map = {
@@ -66,7 +102,7 @@ def calculate_improvement_per_unit(row, resource_type):
     return improvement
 
 # ---------------------------------------------------------------------
-# ILP 최적화 함수
+# ILP 최적화 함수 - 기존 로직 유지
 # ---------------------------------------------------------------------
 def optimize_allocation_ilp(df_scope, resource_type, total_resources):
     col_map = {
@@ -144,17 +180,6 @@ def optimize_allocation_ilp(df_scope, resource_type, total_resources):
 # 지역 취약지수 변화 계산 함수
 # ---------------------------------------------------------------------
 def calculate_regional_vulnerability_change(df_result, scope, selected_sido=None):
-    """
-    시나리오 적용 전후의 지역별(또는 전국/시도) 취약지수 변화를 계산
-    
-    Args:
-        df_result: 최적화 결과 데이터프레임
-        scope: '전국' 또는 '특정 시도'
-        selected_sido: 선택된 시도명 (scope가 '특정 시도'일 때)
-    
-    Returns:
-        tuple: (before_value, after_value, improvement_value, improvement_rate)
-    """
     if scope == "특정 시도" and selected_sido:
         df_analysis = df_result[df_result['시도명'] == selected_sido].copy()
         region_name = selected_sido
@@ -162,7 +187,6 @@ def calculate_regional_vulnerability_change(df_result, scope, selected_sido=None
         df_analysis = df_result.copy()
         region_name = "전국"
     
-    # 총합 기반 계산
     total_before = float(df_analysis['취약지수'].sum())
     total_after = float(df_analysis['배분_후_취약지수'].sum())
     improvement = total_before - total_after
@@ -183,9 +207,6 @@ def calculate_regional_vulnerability_change(df_result, scope, selected_sido=None
 # 시도별 취약지수 변화 계산 함수
 # ---------------------------------------------------------------------
 def calculate_sido_vulnerability_changes(df_result):
-    """
-    시도별로 취약지수 변화를 계산
-    """
     if '시도명' not in df_result.columns:
         return pd.DataFrame()
     
@@ -224,14 +245,24 @@ st.sidebar.header("🔍 분석 옵션")
 year_list = sorted(df['연도'].unique()) if '연도' in df.columns else [2025]
 selected_year = st.sidebar.select_slider("분석 연도", options=year_list, value=year_list[-1])
 
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "**사용 가이드**\n\n"
+    "1. **현황 분석**: 현재 응급의료 취약지 및 부족 자원 현황을 파악합니다.\n"
+    "2. **시뮬레이션**: 한정된 자원(의사, 구급차 등)을 최적으로 배분했을 때의 효과를 예측합니다."
+)
+
 # ---------------------------------------------------------------------
 # 페이지 1: 현황 분석
 # ---------------------------------------------------------------------
 if page == "📊 현황 분석":
     st.markdown("<h1 style='text-align: center;'>🚑 응급의료 취약지 분석 대시보드</h1>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: gray;'>{selected_year}년도 기준 데이터 분석 현황입니다.</p>", unsafe_allow_html=True)
+    
     df_year = df[df['연도'] == selected_year] if '연도' in df.columns else df.copy()
     merged_gdf = gdf.merge(df_year, on='행정구역코드', how='inner')
 
+    # [UPDATE] KPI 메트릭을 좀 더 깔끔하게 배치
     col1, col2, col3, col4 = st.columns(4)
     total_pop = int(df_year['총인구'].sum()) if '총인구' in df_year.columns else 0
     vul_count = int(df_year['취약지역_여부'].sum()) if '취약지역_여부' in df_year.columns else int((df_year['취약지수'] > 0).sum() if '취약지수' in df_year.columns else 0)
@@ -245,16 +276,20 @@ if page == "📊 현황 분석":
     with col3:
         st.metric("📉 평균 취약지수", f"{avg_vul_index:.3f}")
     with col4:
-        st.metric("👨‍⚕️ 필요 의사", f"{needed_docs:,.0f}명")
+        st.metric("👨‍⚕️ 총 필요 의사", f"{needed_docs:,.0f}명")
 
     st.markdown("---")
 
+    # 지도와 차트 레이아웃
     row1_col1, row1_col2 = st.columns([3, 2])
+    
     with row1_col1:
         st.subheader(f"🗺️ {selected_year}년 응급의료 취약지수 지도")
         if not merged_gdf.empty:
             center = [merged_gdf.geometry.centroid.y.mean(), merged_gdf.geometry.centroid.x.mean()]
             m = folium.Map(location=center, zoom_start=7, tiles='cartodbpositron')
+            
+            # [UPDATE] 툴팁 필드에 인구수 추가
             folium.Choropleth(
                 geo_data=merged_gdf,
                 name='취약지수',
@@ -266,13 +301,14 @@ if page == "📊 현황 분석":
                 line_opacity=0.2,
                 legend_name='취약지수'
             ).add_to(m)
+            
             folium.GeoJson(
                 merged_gdf,
                 name='지역 정보',
                 style_function=lambda x: {'fillColor': '#00000000', 'color': '#00000000'},
                 tooltip=folium.GeoJsonTooltip(
-                    fields=['시도명', '시군구명', '취약지수', '추가_의사수', '추가_구급차수'],
-                    aliases=['시도', '시군구', '취약지수', '필요 의사', '필요 구급차'],
+                    fields=['시도명', '시군구명', '총인구', '취약지수', '추가_의사수', '추가_구급차수'],
+                    aliases=['시도', '시군구', '인구(명)', '취약지수', '필요 의사', '필요 구급차'],
                     localize=True
                 )
             ).add_to(m)
@@ -281,37 +317,59 @@ if page == "📊 현황 분석":
             st.warning("지도 표시를 위한 지오데이터가 비어있습니다.")
 
     with row1_col2:
-        st.subheader("📊 자원 부족 상위 지역 (Top 10)")
-        tab1, tab2 = st.tabs(["필요 의사 수", "취약지수 순위"])
+        st.subheader("📊 주요 부족 자원 현황")
+        tab1, tab2, tab3 = st.tabs(["필요 의사 TOP 10", "취약지수 TOP 10", "인구 vs 취약성"])
+        
         with tab1:
             if '추가_의사수' in df_year.columns:
                 top_docs = df_year.nlargest(10, '추가_의사수')
                 if not top_docs.empty:
-                    fig_doc = px.bar(top_docs, x='추가_의사수', y='시군구명', orientation='h', color='추가_의사수')
-                    fig_doc.update_layout(yaxis={'categoryorder':'total ascending'})
+                    fig_doc = px.bar(top_docs, x='추가_의사수', y='시군구명', orientation='h', 
+                                     color='추가_의사수', color_continuous_scale='Reds',
+                                     text='추가_의사수')
+                    fig_doc.update_layout(yaxis={'categoryorder':'total ascending'}, plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_doc, use_container_width=True)
             else:
                 st.info("필요 의사 수 데이터가 없습니다.")
+        
         with tab2:
             if '취약지수' in df_year.columns:
                 top_vul = df_year.nlargest(10, '취약지수')
-                fig_vul = px.bar(top_vul, x='취약지수', y='시군구명', orientation='h', color='취약지수')
-                fig_vul.update_layout(yaxis={'categoryorder':'total ascending'})
+                fig_vul = px.bar(top_vul, x='취약지수', y='시군구명', orientation='h', 
+                                 color='취약지수', color_continuous_scale='Oranges',
+                                 text_auto='.3f')
+                fig_vul.update_layout(yaxis={'categoryorder':'total ascending'}, plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_vul, use_container_width=True)
             else:
                 st.info("취약지수 데이터가 없습니다.")
+        
+        # [NEW FEATURE] 상관관계 분석 차트 추가
+        with tab3:
+            st.markdown("**인구수와 취약지수의 상관관계**")
+            if '총인구' in df_year.columns and '취약지수' in df_year.columns:
+                fig_scatter = px.scatter(
+                    df_year, x='총인구', y='취약지수', 
+                    hover_name='시군구명', color='시도명', size='추가_의사수',
+                    size_max=15, opacity=0.7
+                )
+                fig_scatter.update_layout(height=400, plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_scatter, use_container_width=True)
+                st.caption("💡 원의 크기는 부족한 의사 수를 나타냅니다. 인구가 많은데 취약지수가 높은(우상단) 지역이 관리 우선순위가 높을 수 있습니다.")
 
-    st.markdown("### 📋 상세 데이터")
-    with st.expander("클릭하여 전체 데이터 확인"):
+    st.markdown("### 📋 데이터 상세 보기")
+    with st.expander("클릭하여 전체 데이터 테이블 확인"):
         show_cols = [c for c in ['시도명', '시군구명', '총인구', '고령인구_65세이상', '취약지수', '추가_의사수', '추가_구급차수', '추가_응급시설수'] if c in df_year.columns]
         if not show_cols:
             st.write(df_year.head(10))
         else:
             try:
-                styled_df = df_year[show_cols].sort_values(by='취약지수', ascending=False).style.background_gradient(cmap='OrRd', subset=['취약지수']).format({'취약지수': '{:.3f}', '총인구': '{:,.0f}'})
-                st.dataframe(styled_df)
+                styled_df = df_year[show_cols].sort_values(by='취약지수', ascending=False).style\
+                    .background_gradient(cmap='OrRd', subset=['취약지수'])\
+                    .bar(subset=['추가_의사수'], color='#FFA07A')\
+                    .format({'취약지수': '{:.3f}', '총인구': '{:,.0f}'})
+                st.dataframe(styled_df, use_container_width=True)
             except:
-                st.dataframe(df_year[show_cols].sort_values(by='취약지수', ascending=False))
+                st.dataframe(df_year[show_cols].sort_values(by='취약지수', ascending=False), use_container_width=True)
 
 # ---------------------------------------------------------------------
 # 페이지 2: 시나리오 시뮬레이션
@@ -320,46 +378,55 @@ elif page == "🎯 시나리오 시뮬레이션":
     st.markdown("<h1 style='text-align: center;'>🎯 응급자원 최적 배분 시뮬레이션</h1>", unsafe_allow_html=True)
     df_year = df[df['연도'] == selected_year] if '연도' in df.columns else df.copy()
 
-    st.info("💡 정수계획법(ILP)을 사용해 전체 취약지수 개선량을 최대화하는 자원 배분 계산")
+    st.markdown("""
+    <div style='background-color:#f0f2f6; padding:15px; border-radius:10px; margin-bottom:20px;'>
+    <b>💡 알고리즘 설명 (ILP)</b><br>
+    한정된 예산(자원) 내에서 <b>전체 취약지수 개선 총량을 최대화</b>하는 최적의 배분 조합을 수학적으로 계산합니다.
+    단순히 부족한 곳에 채우는 것이 아니라, <b>'투입 대비 개선 효과'</b>가 가장 큰 지역을 우선 선정합니다.
+    </div>
+    """, unsafe_allow_html=True)
 
     st.subheader("⚙️ 시나리오 설정")
-    col1, col2, col3 = st.columns([2, 2, 3])
-    with col1:
-        scope = st.selectbox("📍 배분 범위", ["전국", "특정 시도"])
-    with col2:
-        selected_sido = None
-        if scope == "특정 시도":
-            sido_list = sorted(df_year['시도명'].unique()) if '시도명' in df_year.columns else []
-            selected_sido = st.selectbox("시도 선택", sido_list)
-            df_scope = df_year[df_year['시도명'] == selected_sido].copy()
-        else:
-            df_scope = df_year.copy()
-    with col3:
-        resource_type = st.selectbox("🚑 자원 유형", ["구급차", "의사", "응급시설"])
+    
+    # [DESIGN] 입력 폼을 컨테이너로 감싸서 구분감 부여
+    with st.container(border=True):
+        col1, col2, col3 = st.columns([2, 2, 3])
+        with col1:
+            scope = st.selectbox("📍 배분 범위", ["전국", "특정 시도"])
+        with col2:
+            selected_sido = None
+            if scope == "특정 시도":
+                sido_list = sorted(df_year['시도명'].unique()) if '시도명' in df_year.columns else []
+                selected_sido = st.selectbox("시도 선택", sido_list)
+                df_scope = df_year[df_year['시도명'] == selected_sido].copy()
+            else:
+                df_scope = df_year.copy()
+        with col3:
+            resource_type = st.selectbox("🚑 자원 유형", ["구급차", "의사", "응급시설"])
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        resource_map = {
-            "구급차": ("추가_구급차수", "대", 100),
-            "의사": ("추가_의사수", "명", 500),
-            "응급시설": ("추가_응급시설수", "개소", 50)
-        }
-        col_name, unit, max_val = resource_map[resource_type]
-        resource_amount = st.slider(f"추가 가능한 {resource_type} 수량", min_value=1, max_value=max_val, value=min(30, max_val))
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        run_simulation = st.button("🚀 최적화 실행", type="primary", use_container_width=True, key="run_ilp")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            resource_map = {
+                "구급차": ("추가_구급차수", "대", 100),
+                "의사": ("추가_의사수", "명", 500),
+                "응급시설": ("추가_응급시설수", "개소", 50)
+            }
+            col_name, unit, max_val = resource_map[resource_type]
+            resource_amount = st.slider(f"추가 가능한 {resource_type} 수량", min_value=1, max_value=max_val, value=min(30, max_val))
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            run_simulation = st.button("🚀 최적화 실행", type="primary", use_container_width=True, key="run_ilp")
 
     # Clear 버튼
-    clear_sim = st.button("🧹 결과 초기화", key="clear_ilp")
-    if clear_sim:
+    if st.button("🧹 결과 초기화", key="clear_ilp"):
         st.session_state["ilp_result"] = None
         st.session_state["ilp_params"] = {}
+        st.rerun()
 
-    # 버튼 클릭시 실행하고 결과를 session_state에 저장
+    # 실행 로직
     if run_simulation:
         try:
-            with st.spinner('정수계획법(ILP)으로 최적해 계산 중...'):
+            with st.spinner(f'{resource_type} {resource_amount}{unit}에 대한 최적 배분 계산 중...'):
                 result_df = optimize_allocation_ilp(df_scope, resource_type, resource_amount)
             st.session_state["ilp_result"] = result_df
             st.session_state["ilp_params"] = {
@@ -367,16 +434,19 @@ elif page == "🎯 시나리오 시뮬레이션":
                 "selected_sido": selected_sido,
                 "resource_type": resource_type,
                 "resource_amount": resource_amount,
-                "year": selected_year
+                "year": selected_year,
+                "unit": unit
             }
             st.success("✅ 최적 배분 완료!")
         except Exception as e:
             st.error(f"최적화 실행 중 오류: {e}")
 
-    # 화면에는 session_state의 결과를 사용 (rerun 방지)
+    # 결과 화면
     if st.session_state["ilp_result"] is not None:
         df_result = st.session_state["ilp_result"].copy()
         params = st.session_state.get("ilp_params", {})
+        unit_str = params.get("unit", "")
+        
         df_allocated = df_result[df_result['배분량'] > 0].copy()
         total_improvement = float(df_result['취약지수_개선'].sum()) if '취약지수_개선' in df_result.columns else 0.0
         avg_before = float(df_result['취약지수'].mean()) if '취약지수' in df_result.columns else 0.0
@@ -384,18 +454,35 @@ elif page == "🎯 시나리오 시뮬레이션":
         total_allocated = int(df_allocated['배분량'].sum()) if not df_allocated.empty else 0
 
         st.markdown("---")
-        st.subheader("📊 최적화 결과")
+        st.subheader("📊 최적화 결과 리포트")
+
+        # [NEW FEATURE] 자동 생성 인사이트 메시지
+        if not df_allocated.empty:
+            top_alloc_region = df_allocated.loc[df_allocated['배분량'].idxmax()]
+            top_alloc_name = top_alloc_region['시군구명']
+            top_alloc_val = int(top_alloc_region['배분량'])
+            
+            insight_msg = f"""
+            <div class='insight-box'>
+            <b>💡 Analysis Insight</b><br>
+            시뮬레이션 결과, 총 <b>{len(df_allocated)}개 지역</b>에 자원이 배분되었습니다.<br>
+            가장 많은 자원이 투입된 지역은 <b>{top_alloc_region['시도명']} {top_alloc_name}</b>이며, 
+            단일 지역에 <b>{top_alloc_val}{unit_str}</b>가 배정되었습니다. 
+            이를 통해 전체 취약지수 평균이 <b>{avg_before:.3f}</b>에서 <b>{avg_after:.3f}</b>로 개선되었습니다.
+            </div>
+            """
+            st.markdown(insight_msg, unsafe_allow_html=True)
 
         k1, k2, k3, k4 = st.columns(4)
         with k1:
-            st.metric("🎯 배분 지역", f"{len(df_allocated)}개")
+            st.metric("🎯 배분 지역 수", f"{len(df_allocated)}개")
         with k2:
-            st.metric("✅ 배분 완료", f"{total_allocated}{unit}")
+            st.metric("✅ 실제 배분량", f"{total_allocated}{unit_str}")
         with k3:
             improvement_rate = ((avg_before - avg_after) / avg_before * 100) if avg_before > 0 else 0.0
-            st.metric("📈 평균 개선율", f"{improvement_rate:.1f}%")
+            st.metric("📈 취약성 개선율", f"{improvement_rate:.1f}%")
         with k4:
-            st.metric("✨ 총 개선 효과", f"{total_improvement:.4f}")
+            st.metric("✨ 총 효용(Objective)", f"{total_improvement:.2f}")
 
         col_map_for_merge = ['행정구역코드', '배분량', '취약지수_개선']
         if '행정구역코드' in gdf.columns and set(col_map_for_merge).issubset(df_result.columns):
@@ -421,6 +508,7 @@ elif page == "🎯 시나리오 시뮬레이션":
                     line_opacity=0.5,
                     legend_name=f'배분된 {resource_type} 수'
                 ).add_to(m)
+                
                 merged_for_tooltip = gdf_result.merge(df_result[['행정구역코드', '시도명', '시군구명']], on='행정구역코드', how='left') if '시도명' in df_result.columns else gdf_result
                 folium.GeoJson(
                     merged_for_tooltip,
@@ -437,104 +525,72 @@ elif page == "🎯 시나리오 시뮬레이션":
                 st.warning("지도에 표시할 배분 결과가 없습니다.")
 
         with col2:
-            st.markdown("#### 📋 배분 상세 (Top 15)")
+            st.markdown("#### 📋 배분 상위 지역 (Top 15)")
             if not df_allocated.empty:
                 display_df = df_allocated.nlargest(15, '배분량')[['시도명', '시군구명', '배분량', '취약지수_개선', '해소율']].fillna(0)
-                st.dataframe(display_df.style.format({'배분량': '{:.0f}', '취약지수_개선': '{:.4f}', '해소율': '{:.1f}%'}), height=420)
+                st.dataframe(
+                    display_df.style.background_gradient(cmap='Greens', subset=['배분량'])
+                    .format({'배분량': '{:.0f}', '취약지수_개선': '{:.4f}', '해소율': '{:.1f}%'}), 
+                    height=420,
+                    use_container_width=True
+                )
             else:
                 st.info("배분된 지역이 없습니다.")
 
-        # 개선 효과 차트 - 양분 레이아웃 (왼쪽: 지역 취약지수 변화, 오른쪽: 개선효과)
+        # 개선 효과 차트
         if not df_allocated.empty and '배분_후_취약지수' in df_result.columns:
+            st.markdown("---")
             col_chart1, col_chart2 = st.columns([1, 1])
             
             with col_chart1:
                 st.markdown("#### 📊 지역 전체 취약지수 변화")
-                
-                # 지역 취약지수 변화 계산
                 regional_info = calculate_regional_vulnerability_change(
                     df_result, 
                     params.get('scope', '전국'),
                     params.get('selected_sido')
                 )
                 
-                # 변화 데이터 준비
                 change_data = pd.DataFrame({
                     '상태': ['배분 전', '배분 후'],
                     '총합': [regional_info['before'], regional_info['after']]
                 })
                 
-                # 총합 변화 그래프
                 fig_regional = px.bar(
-                    change_data, 
-                    x='상태', 
-                    y='총합',
-                    color='상태',
-                    color_discrete_map={'배분 전': '#EF553B', '배분 후': '#636EFA'},
-                    labels={'총합': '전체 취약지수'}
+                    change_data, x='상태', y='총합', color='상태',
+                    color_discrete_map={'배분 전': '#EF553B', '배분 후': '#00CC96'},
+                    text_auto='.1f'
                 )
-                fig_regional.update_layout(
-                    height=350,
-                    showlegend=False,
-                    yaxis_title='취약지수 (합계)',
-                    xaxis_title='',
-                    hovermode='x unified'
-                )
+                fig_regional.update_layout(height=350, showlegend=False, plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_regional, use_container_width=True)
                 
-                # 통계 정보
-                st.markdown(f"**📍 선택 범위:** {regional_info['region_name']}")
-                st.markdown(f"**📍 분석 지역 수:** {regional_info['num_regions']}개")
-                st.divider()
-                col_a, col_b, col_c = st.columns(3)
-                with col_a:
-                    st.metric("배분 전 총합", f"{regional_info['before']:.2f}")
-                with col_b:
-                    st.metric("배분 후 총합", f"{regional_info['after']:.2f}")
-                with col_c:
-                    st.metric("개선 효과", f"{regional_info['improvement']:.4f}", 
-                             delta=f"{regional_info['improvement_rate']:.1f}%")
-                
-                # 시도별 변화 표시
+                # 시도별 변화 (전국 범위일 때만)
                 if params.get('scope') == '전국':
-                    st.markdown("**🗺️ 시도별 개선 현황**")
-                    sido_changes = calculate_sido_vulnerability_changes(df_result)
-                    if not sido_changes.empty:
-                        fig_sido = px.bar(
-                            sido_changes,
-                            x='시도',
-                            y='개선효과',
-                            color='개선율',
-                            color_continuous_scale='Greens',
-                            hover_data=['배분전', '배분후', '개선율'],
-                            labels={'개선효과': '취약지수 개선량'}
-                        )
-                        fig_sido.update_layout(height=300, xaxis_tickangle=-45)
-                        st.plotly_chart(fig_sido, use_container_width=True)
+                    with st.expander("시도별 개선 현황 보기"):
+                        sido_changes = calculate_sido_vulnerability_changes(df_result)
+                        if not sido_changes.empty:
+                            fig_sido = px.bar(sido_changes, x='시도', y='개선효과', color='개선율', color_continuous_scale='Teal')
+                            st.plotly_chart(fig_sido, use_container_width=True)
             
             with col_chart2:
-                st.markdown("#### 📊 취약지수 개선 효과 (Top 10)")
-                top10 = df_allocated.nlargest(10, '배분량')
-                fig = go.Figure()
-                fig.add_trace(go.Bar(y=top10['시군구명'], x=top10['취약지수'], name='배분 전', orientation='h'))
-                fig.add_trace(go.Bar(y=top10['시군구명'], x=top10['배분_후_취약지수'], name='배분 후', orientation='h'))
-                fig.update_layout(barmode='group', yaxis={'categoryorder':'total ascending'}, height=400, xaxis_title='취약지수')
-                st.plotly_chart(fig, use_container_width=True)
+                st.markdown("#### 📊 배분 효과성 (개선 효율 Top 10)")
+                # [NEW FEATURE] 단순 배분량이 아니라, 개선 효율이 높은 곳을 시각화
+                if '취약지수_개선' in df_allocated.columns:
+                    top_eff = df_allocated.nlargest(10, '취약지수_개선')
+                    fig_eff = px.scatter(
+                        top_eff, x='배분량', y='취약지수_개선', size='취약지수_개선', color='시군구명',
+                        hover_data=['시도명', '해소율'],
+                        labels={'취약지수_개선': '총 개선효과', '배분량': '자원 투입량'}
+                    )
+                    fig_eff.update_layout(height=350, plot_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_eff, use_container_width=True)
+                    st.caption("💡 y축이 높을수록 적은 자원으로도 큰 효과를 본 지역입니다.")
 
-        # 전체 결과 및 다운로드
-        with st.expander("📋 전체 지역 배분 결과 보기"):
+        # 다운로드 섹션
+        with st.expander("📥 결과 데이터 다운로드"):
             display_full = df_result[df_result['배분량'] > 0] if len(df_result[df_result['배분량'] > 0]) > 0 else df_result.head(20)
-            cols_to_show = [c for c in ['시도명', '시군구명', '취약지수', '배분량', '배분_후_취약지수', '취약지수_개선', '해소율'] if c in display_full.columns]
-            st.dataframe(display_full[cols_to_show].sort_values('배분량', ascending=False).style.format({
-                '취약지수': '{:.4f}', '배분량': '{:.0f}', '배분_후_취약지수': '{:.4f}', '취약지수_개선': '{:.4f}', '해소율': '{:.1f}%'
-            }))
-
-        csv = df_result.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button(label="📥 최적화 결과 다운로드 (CSV)", data=csv, file_name=f"ILP_최적배분_{resource_type}_{selected_year}년.csv", mime="text/csv")
+            st.dataframe(display_full.sort_values('배분량', ascending=False), use_container_width=True)
+            csv = df_result.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(label="CSV 다운로드", data=csv, file_name=f"ILP_최적배분_{resource_type}_{selected_year}년.csv", mime="text/csv")
 
     else:
-        st.info("ILP 최적 배분을 실행하려면 오른쪽 상단의 '🚀 최적화 실행' 버튼을 누르세요.")
-
-# ---------------------------------------------------------------------
-# 끝
-# ---------------------------------------------------------------------
+        st.info("👈 왼쪽 사이드바에서 시나리오를 설정하고 '최적화 실행' 버튼을 눌러주세요.")
