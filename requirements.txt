@@ -1,9 +1,21 @@
-streamlit
-pandas
-geopandas
-numpy
-folium
-streamlit-folium
-plotly
-matplotlib
-pulp
+# Core Framework
+streamlit>=1.28.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Geospatial Analysis
+geopandas>=0.14.0
+shapely>=2.0.0
+pyproj>=3.4.0
+fiona>=1.9.0
+
+# Visualization
+folium>=0.15.0
+streamlit-folium>=0.15.0
+plotly>=5.17.0
+matplotlib>=3.7.0
+
+# Optimization
+pulp>=2.7.0

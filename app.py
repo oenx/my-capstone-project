@@ -761,32 +761,54 @@ elif page == "🎯 시나리오 시뮬레이션":
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("#### 📊 취약지수 변화 추이")
+                st.markdown("#### 📊 취약지수 변화 (시뮬레이션 효과)")
                 regional_info = calculate_regional_vulnerability_change(
                     df_result, params.get('scope', '전국'), params.get('selected_sido')
                 )
                 
                 year = params.get('year', 2025)
+                
+                # 같은 연도 내에서 "현재 상태" vs "시뮬레이션 적용 시" 비교
                 line_data = pd.DataFrame({
-                    '시점': [f'{year}년 현재', f'{year+1}년 (시뮬레이션)'],
+                    '시나리오': [f'{year}년 (현재)', f'{year}년 (시뮬레이션 적용)'],
                     '평균 취약지수': [regional_info['avg_before'], regional_info['avg_after']]
                 })
                 
-                fig = px.line(
-                    line_data, x='시점', y='평균 취약지수',
-                    markers=True, text='평균 취약지수'
+                fig = go.Figure()
+                
+                # 막대 그래프로 시각적 차이 강조
+                fig.add_trace(go.Bar(
+                    x=line_data['시나리오'],
+                    y=line_data['평균 취약지수'],
+                    text=line_data['평균 취약지수'].apply(lambda x: f'{x:.4f}'),
+                    textposition='outside',
+                    marker_color=['#e74c3c', '#27ae60'],  # 빨강(나쁨) -> 초록(개선)
+                    width=0.5
+                ))
+                
+                fig.update_layout(
+                    height=350,
+                    yaxis_title='평균 취약지수',
+                    yaxis=dict(range=[0, max(regional_info['avg_before'] * 1.2, 0.1)]),
+                    showlegend=False,
+                    plot_bgcolor='rgba(0,0,0,0)'
                 )
-                fig.update_traces(texttemplate='%{text:.4f}', textposition='top center')
-                fig.update_layout(height=350)
+                
                 st.plotly_chart(fig, use_container_width=True)
                 
                 improvement_pct = regional_info['improvement_rate']
+                improvement_abs = regional_info['avg_before'] - regional_info['avg_after']
+                
                 st.markdown(f"""
                 <div style='background-color:#d4edda; padding:15px; border-radius:10px; border-left:4px solid #28a745;'>
-                <b>📍 {regional_info['region_name']}</b><br>
-                평균 취약지수 <b>{improvement_pct:.2f}%</b> 개선
+                <b>📍 {regional_info['region_name']} ({year}년)</b><br><br>
+                • 현재 상태: <b>{regional_info['avg_before']:.4f}</b><br>
+                • 시뮬레이션 적용 시: <b>{regional_info['avg_after']:.4f}</b><br>
+                • 개선 효과: <b>-{improvement_abs:.4f}</b> (<span style='color:#27ae60; font-size:1.1em;'><b>▼ {improvement_pct:.2f}%</b></span>)
                 </div>
                 """, unsafe_allow_html=True)
+                
+                st.caption(f"💡 {year}년 동일 시점에서 자원 배분 시 즉각적인 취약지수 개선 효과를 보여줍니다.")
             
             with col2:
                 st.markdown("#### 📊 배분 효율성 분석")
