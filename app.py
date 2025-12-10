@@ -173,6 +173,9 @@ def optimize_allocation_ilp(df_scope, resource_type, total_resources):
 
     df_result['취약지수_개선'] = df_result.apply(calc_vul_improve, axis=1)
     df_result['배분_후_취약지수'] = df_result['취약지수'] - df_result['취약지수_개선']
+    
+    # 개선율(%) 계산: 원래 취약지수 대비 몇 % 개선되었는지
+    df_result['개선율(%)'] = (df_result['취약지수_개선'] / df_result['취약지수'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
 
     return df_result
 
@@ -527,10 +530,10 @@ elif page == "🎯 시나리오 시뮬레이션":
         with col2:
             st.markdown("#### 📋 배분 상위 지역 (Top 15)")
             if not df_allocated.empty:
-                display_df = df_allocated.nlargest(15, '배분량')[['시도명', '시군구명', '배분량', '취약지수_개선', '해소율']].fillna(0)
+                display_df = df_allocated.nlargest(15, '배분량')[['시도명', '시군구명', '배분량', '개선율(%)', '해소율']].fillna(0)
                 st.dataframe(
                     display_df.style.background_gradient(cmap='Greens', subset=['배분량'])
-                    .format({'배분량': '{:.0f}', '취약지수_개선': '{:.4f}', '해소율': '{:.1f}%'}), 
+                    .format({'배분량': '{:.0f}', '개선율(%)': '{:.1f}%', '해소율': '{:.1f}%'}), 
                     height=420,
                     use_container_width=True
                 )
@@ -550,25 +553,64 @@ elif page == "🎯 시나리오 시뮬레이션":
                     params.get('selected_sido')
                 )
                 
-                change_data = pd.DataFrame({
-                    '상태': ['배분 전', '배분 후'],
-                    '총합': [regional_info['before'], regional_info['after']]
+                # 꺾은선 그래프용 데이터: 현재 -> 시뮬레이션 적용 후
+                current_year = params.get('year', 2024)
+                next_year = current_year + 1
+                
+                # 평균 취약지수 사용 (0.xx 형태)
+                avg_before = regional_info['avg_before']
+                avg_after = regional_info['avg_after']
+                improvement_pct = ((avg_before - avg_after) / avg_before * 100) if avg_before > 0 else 0.0
+                
+                line_data = pd.DataFrame({
+                    '연도': [f'{current_year}년 현재', f'{next_year}년 (시뮬레이션 적용)'],
+                    '평균 취약지수': [avg_before, avg_after]
                 })
                 
-                fig_regional = px.bar(
-                    change_data, x='상태', y='총합', color='상태',
-                    color_discrete_map={'배분 전': '#EF553B', '배분 후': '#00CC96'},
-                    text_auto='.1f'
+                fig_regional = go.Figure()
+                fig_regional.add_trace(go.Scatter(
+                    x=line_data['연도'],
+                    y=line_data['평균 취약지수'],
+                    mode='lines+markers+text',
+                    line=dict(color='#636EFA', width=3),
+                    marker=dict(size=12, color=['#EF553B', '#00CC96']),
+                    text=[f'{avg_before:.4f}', f'{avg_after:.4f}'],
+                    textposition='top center',
+                    textfont=dict(size=14, color='black'),
+                    hovertemplate='%{x}<br>취약지수: %{y:.4f}<extra></extra>'
+                ))
+                
+                fig_regional.update_layout(
+                    height=300,
+                    showlegend=False,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    yaxis_title='평균 취약지수',
+                    xaxis_title='',
+                    yaxis=dict(range=[0, max(avg_before * 1.2, 0.1)])
                 )
-                fig_regional.update_layout(height=350, showlegend=False, plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_regional, use_container_width=True)
+                
+                # 개선효과를 퍼센트로 명확하게 표시
+                scope_name = regional_info['region_name']
+                st.markdown(f"""
+                <div style='background-color:#e8f4ea; padding:15px; border-radius:10px; border-left:4px solid #00CC96;'>
+                    <b>📍 {scope_name}</b> 시뮬레이션 결과<br><br>
+                    • 현재 평균 취약지수: <b>{avg_before:.4f}</b><br>
+                    • 적용 후 평균 취약지수: <b>{avg_after:.4f}</b><br>
+                    • <span style='color:#00CC96; font-size:1.2em;'><b>▼ {improvement_pct:.2f}% 개선</b></span>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 # 시도별 변화 (전국 범위일 때만)
                 if params.get('scope') == '전국':
                     with st.expander("시도별 개선 현황 보기"):
                         sido_changes = calculate_sido_vulnerability_changes(df_result)
                         if not sido_changes.empty:
-                            fig_sido = px.bar(sido_changes, x='시도', y='개선효과', color='개선율', color_continuous_scale='Teal')
+                            fig_sido = px.bar(sido_changes, x='시도', y='개선율', color='개선율', 
+                                            color_continuous_scale='Teal',
+                                            text=sido_changes['개선율'].apply(lambda x: f'{x:.1f}%'))
+                            fig_sido.update_traces(textposition='outside')
+                            fig_sido.update_layout(yaxis_title='개선율 (%)')
                             st.plotly_chart(fig_sido, use_container_width=True)
             
             with col_chart2:
