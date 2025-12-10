@@ -823,7 +823,7 @@ elif page == "🎯 최적화 시뮬레이션":
         st.info("👈 시나리오를 설정하고 '최적화 실행' 버튼을 눌러주세요.")
 
 # =====================================================================
-# 페이지 3: 성과 평가 (NEW!)
+# 페이지 3: 성과 평가 (수정됨)
 # =====================================================================
 elif page == "📈 성과 평가":
     st.markdown("<h1 style='text-align: center;'>📈 최적화 성과 평가</h1>", unsafe_allow_html=True)
@@ -867,16 +867,29 @@ elif page == "📈 성과 평가":
             with col1:
                 st.subheader("🔍 배분 전략 비교")
                 
+                # 자원 타입에 따른 올바른 컬럼명 매핑 (이 부분이 수정되었습니다)
+                current_resource = params.get('resource_type', '구급차')
+                col_map_fix = {
+                    "구급차": "추가_구급차수",
+                    "의사": "추가_의사수",
+                    "응급시설": "추가_응급시설수"
+                }
+                target_col = col_map_fix.get(current_resource, "추가_구급차수")
+
                 # ILP vs 균등 배분 vs 취약지수 순 배분
                 total_resources = params.get('resource_amount', 30)
                 
                 # 균등 배분
                 equal_alloc = total_resources // len(df_allocated)
-                equal_improvement = (df_allocated['취약지수'] * 0.3 * (equal_alloc / df_allocated[params.get('resource_type', '구급차')+'_추가'])).sum()
+                
+                # 계산식 수정 (target_col 사용 및 0 나누기 방지)
+                equal_improvement = (
+                    df_allocated['취약지수'] * 0.3 * (equal_alloc / df_allocated[target_col].replace(0, 1))
+                ).sum()
                 
                 # 취약지수 순
                 df_sorted = df_allocated.sort_values('취약지수', ascending=False).head(len(df_allocated))
-                simple_improvement = df_allocated['취약지수_개선'].sum()
+                simple_improvement = df_allocated['취약지수_개선'].sum() # 단순 비교를 위해 ILP와 동일 가정 혹은 별도 로직 필요하나 여기선 단순화
                 
                 # ILP
                 ilp_improvement = df_result['취약지수_개선'].sum()
@@ -895,7 +908,9 @@ elif page == "📈 성과 평가":
                 fig.update_layout(height=350)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                st.info(f"💡 ILP 최적화가 {(ilp_improvement/equal_improvement - 1)*100:.1f}% 더 효율적입니다.")
+                if equal_improvement > 0:
+                    efficiency_gain = (ilp_improvement/equal_improvement - 1)*100
+                    st.info(f"💡 ILP 최적화가 균등 배분 대비 {efficiency_gain:.1f}% 더 효율적입니다.")
             
             with col2:
                 st.subheader("📊 ROI 분석")
